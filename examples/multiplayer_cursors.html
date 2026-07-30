@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Open this file in two or more browser tabs/devices (any static file server
+  works, e.g. `python3 -m http.server` from this directory) while
+  `beacon serve` is running on localhost:8420. Move your mouse in one tab,
+  watch the dot appear in the others -- ~10 lines of client code, no
+  websocket library, no build step.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>beacon: multiplayer cursors</title>
+<style>
+  body { margin: 0; height: 100vh; background: #0b0e14; overflow: hidden; cursor: crosshair; }
+  .cursor { position: absolute; width: 14px; height: 14px; border-radius: 50%;
+            transform: translate(-50%, -50%); pointer-events: none; transition: left 60ms linear, top 60ms linear; }
+  .label { position: absolute; top: 16px; left: 8px; font: 11px monospace; color: #6b7280; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="label" id="me"></div>
+<script>
+const BEACON_URL = "http://localhost:8420";
+const CHANNEL = "cursors-demo";
+const myId = Math.random().toString(36).slice(2, 8);
+const colors = {};
+const dots = {};
+
+document.getElementById('me').textContent = `you are: ${myId} (move your mouse)`;
+
+function colorFor(id) {
+  if (!colors[id]) {
+    let hash = 0;
+    for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) % 360;
+    colors[id] = `hsl(${hash}, 80%, 60%)`;
+  }
+  return colors[id];
+}
+
+function dotFor(id) {
+  if (!dots[id]) {
+    const el = document.createElement('div');
+    el.className = 'cursor';
+    el.style.background = colorFor(id);
+    el.style.boxShadow = `0 0 12px ${colorFor(id)}`;
+    document.body.appendChild(el);
+    dots[id] = el;
+  }
+  return dots[id];
+}
+
+document.addEventListener('mousemove', (e) => {
+  fetch(`${BEACON_URL}/pub/${CHANNEL}`, {
+    method: 'POST',
+    body: JSON.stringify({ id: myId, x: e.clientX, y: e.clientY }),
+  });
+});
+
+const source = new EventSource(`${BEACON_URL}/sub/${CHANNEL}?name=${myId}`);
+source.onmessage = (e) => {
+  const evt = JSON.parse(e.data);
+  if (evt.type !== 'message' || evt.data.id === myId) return;
+  const dot = dotFor(evt.data.id);
+  dot.style.left = evt.data.x + 'px';
+  dot.style.top = evt.data.y + 'px';
+};
+</script>
+</body>
+</html>

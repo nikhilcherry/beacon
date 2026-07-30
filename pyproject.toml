@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beacon-relay"
+version = "0.1.0"
+description = "One-command real-time pub/sub relay + live dashboard, for hackathon demos"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Nikhil Cherry" }]
+keywords = ["hackathon", "websocket", "sse", "pubsub", "realtime", "relay"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: System :: Networking",
+]
+
+[project.urls]
+Homepage = "https://github.com/nikhilcherry/beacon"
+
+[project.scripts]
+beacon = "beacon.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["beacon"]
+
+[tool.setuptools.package-data]
+beacon = ["dashboard.html"]

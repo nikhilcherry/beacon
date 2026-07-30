@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>beacon</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: #0b0e14; color: #d6dae3; height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid #1e2430; display: flex;
+    align-items: center; gap: 12px; flex-shrink: 0;
+  }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+  header .sub { color: #6b7280; font-size: 12px; }
+  main { flex: 1; display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
+  #channels { border-right: 1px solid #1e2430; overflow-y: auto; padding: 10px; }
+  #channels h2, #feed h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin: 6px 10px; }
+  .channel { padding: 8px 10px; border-radius: 6px; font-size: 13px; display: flex; justify-content: space-between; }
+  .channel:hover { background: #131826; }
+  .channel .count { color: #58a6ff; }
+  #feed { overflow-y: auto; padding: 10px 16px; }
+  .event { padding: 6px 0; border-bottom: 1px solid #151a24; font-size: 12.5px; display: flex; gap: 10px; }
+  .event .ts { color: #4b5563; flex-shrink: 0; }
+  .event .ch { color: #f0883e; flex-shrink: 0; }
+  .event .type-join .ch, .event .type-leave .ch { color: #6b7280; }
+  .event .payload { color: #d6dae3; white-space: pre-wrap; word-break: break-word; }
+  .event .type-join .payload, .event .type-leave .payload { color: #6b7280; font-style: italic; }
+  #empty { color: #4b5563; padding: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="statusdot"></div>
+  <h1>beacon</h1>
+  <span class="sub">live relay dashboard</span>
+</header>
+<main>
+  <div id="channels"><h2>channels</h2><div id="channellist"></div></div>
+  <div id="feed"><h2>live feed</h2><div id="eventlist"></div></div>
+</main>
+<script>
+const eventList = document.getElementById('eventlist');
+const channelList = document.getElementById('channellist');
+const statusDot = document.getElementById('statusdot');
+
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString();
+}
+
+function addEvent(evt) {
+  const row = document.createElement('div');
+  row.className = 'event type-' + evt.type;
+  const payload = evt.type === 'message' ? JSON.stringify(evt.data) : `${evt.data.who} ${evt.type === 'join' ? 'joined' : 'left'} (${evt.data.count} online)`;
+  row.innerHTML = `<span class="ts">${fmtTime(evt.ts)}</span><span class="ch">${evt.channel}</span><span class="payload"></span>`;
+  row.querySelector('.payload').textContent = payload;
+  eventList.prepend(row);
+  while (eventList.children.length > 200) eventList.removeChild(eventList.lastChild);
+}
+
+async function refreshChannels() {
+  try {
+    const res = await fetch('/channels');
+    const data = await res.json();
+    const entries = Object.entries(data);
+    channelList.innerHTML = entries.length ? '' : '<div id="empty">no active channels yet</div>';
+    for (const [name, info] of entries) {
+      const el = document.createElement('div');
+      el.className = 'channel';
+      el.innerHTML = `<span>${name}</span><span class="count">${info.subscribers}</span>`;
+      channelList.appendChild(el);
+    }
+  } catch (e) { /* ignore transient errors */ }
+}
+
+const source = new EventSource('/sub/_all?name=dashboard');
+source.onopen = () => { statusDot.style.background = '#3fb950'; };
+source.onerror = () => { statusDot.style.background = '#f85149'; };
+source.onmessage = (e) => {
+  const evt = JSON.parse(e.data);
+  addEvent(evt);
+  refreshChannels();
+};
+
+refreshChannels();
+setInterval(refreshChannels, 4000);
+</script>
+</body>
+</html>

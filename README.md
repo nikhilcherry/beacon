@@ -1,5 +1,12 @@
 # beacon
 
+<p align="center">
+  <img src="https://img.shields.io/github/actions/workflow/status/nikhilcherry/beacon/ci.yml?branch=main&amp;label=ci&amp;style=flat-square" alt="CI status">
+  <img src="https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square" alt="Python 3.8+">
+  <img src="https://img.shields.io/badge/dependencies-none-3fb950?style=flat-square" alt="No dependencies">
+  <img src="https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square" alt="MIT license">
+</p>
+
 **One command turns any laptop into a real-time pub/sub relay** — with a
 live dashboard and, if you want, a public URL. No websocket library, no
 build step, no account to sign up for.
@@ -17,7 +24,9 @@ beacon relay listening on http://localhost:8420
 ```
 
 Open `http://localhost:8420/` and you'll see every channel and every message
-flowing through the relay, live, as it happens.
+flowing through the relay, live, as it happens:
+
+![beacon's live dashboard showing four active channels (sensors, leaderboard, game-lobby, and a blockcraft game session) and a real-time feed of every message flowing through them](docs/images/dashboard.jpg)
 
 ## Why
 
@@ -52,12 +61,52 @@ does for static apps: `hoist` gets a whole app onto a public URL; `beacon`
 gets many devices talking to each other in real time, in about the same
 amount of typing.
 
+## See it work
+
+`examples/multiplayer_cursors.html` is a ~40-line page with no build step:
+open it in a few browser tabs (or hand it to a few phones), move your
+mouse, and every other tab's cursor follows live. This is three real tabs,
+each running the unmodified example, talking only through `beacon serve`:
+
+![three browser tabs open to the same page, each showing the other two tabs' live mouse cursors as colored glowing dots](docs/images/multiplayer-cursors.jpg)
+
+There's no signaling server, no room-joining handshake, no WebRTC — every
+tab just publishes its mouse position to a shared channel and subscribes
+to everyone else's. That's the whole trick beacon exists to make trivial.
+
+## How it works
+
+```
+   POST /pub/<channel>  ──┐
+   (any publisher)        │
+                           ▼
+                    ┌─────────────┐        one Queue per open
+                    │     Bus     │   ───▶ subscriber connection
+                    │ (in-memory) │
+                    └─────────────┘
+                           │
+   GET /sub/<channel>  ◀──┘
+   (Server-Sent Events, stays open)
+```
+
+- A channel is created the moment someone subscribes to it and forgotten
+  the moment the last subscriber disconnects — there's no channel registry
+  to configure, no persistence, no message history. Beacon relays what's
+  happening *right now*; it's a relay, not a queue.
+- Every subscriber connection gets its own `Queue`; a publish fans a copy
+  of the event out to every queue on that channel (plus the dashboard's
+  firehose subscription at `/sub/_all`) and returns immediately.
+- The HTTP server is a plain `ThreadingHTTPServer` from the standard
+  library — one thread per open connection, no async framework, no
+  external event loop to reason about.
+- Presence (`?name=you`, join/leave events) is just bookkeeping on top of
+  the same subscribe connection — when it closes (tab closed, network
+  drop), the server notices and broadcasts a `leave`.
+
 ## Use it for
 
 - **multiplayer state** — every player publishes to a shared channel,
-  everyone else subscribes. See `examples/multiplayer_cursors.html` for a
-  ~40-line working demo: open it in two browser tabs, move your mouse,
-  watch the other tab's cursor follow.
+  everyone else subscribes. See `examples/multiplayer_cursors.html` above.
 - **IoT / sensor swarms** — an ESP32, a Raspberry Pi, a phone's
   accelerometer, all `POST`ing to `/pub/sensors`; one dashboard watching
   all of them.
@@ -67,6 +116,14 @@ amount of typing.
   code that opens a controller page that publishes button presses.
 - **judge-visible "it's alive" proof** — the dashboard alone is often worth
   running just so judges can see live traffic during a demo.
+
+**Built on beacon:** BlockCraft, a single-file WebGL voxel game, uses it to
+add live multiplayer presence — two browser tabs opened with the same
+world seed join the same beacon channel, each player publishes their
+position every tick, and everyone renders everyone else's avatar in real
+time. The entire multiplayer layer is under 150 lines on top of `fetch` +
+`EventSource`; no game server was written. (Not included in this repo —
+same idea as `examples/multiplayer_cursors.html` above, just in 3D.)
 
 ## API
 

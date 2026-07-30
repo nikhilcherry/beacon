@@ -114,6 +114,8 @@ beacon sub sensors
 
 ## Going public
 
+Two ways to get beacon onto a public URL, for two different situations:
+
 ```bash
 beacon serve --tunnel
 ```
@@ -122,11 +124,29 @@ beacon serve --tunnel
   public    : https://random-words-here.trycloudflare.com  <-- share this
 ```
 
-That URL works from any device, anywhere — perfect for handing to a judge's
-phone or letting teammates on a different network publish/subscribe. It's an
-ephemeral tunnel: it dies when `beacon` stops, and needs nothing configured
-ahead of time (unlike `hoist`, which sets up a persistent tunnel with your
-own domain — reach for that when the app needs to outlive the demo).
+A [cloudflared quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) —
+works from any device, anywhere, needs nothing configured ahead of time.
+It's ephemeral: the URL is random and dies the moment `beacon` stops. Good
+for a one-off demo.
+
+If you have [`hoist`](https://github.com/nikhilcherry/hoist) set up with
+your own domain, use `--hoist` instead:
+
+```bash
+beacon serve --hoist          # or: beacon serve --hoist my-relay-name
+```
+
+```
+  https://beacon.yourdomain.com
+```
+
+This calls `hoist adopt` under the hood, registering the already-running
+relay port under your persistent Cloudflare Tunnel + DNS. The URL is
+stable across restarts — the same address every time — which is what you
+want for a QR code left up on a table for an entire hackathon, or a
+webhook target teammates can bookmark, rather than a link that changes
+every run. `--tunnel` and `--hoist` are mutually exclusive; pick whichever
+matches whether this demo needs to outlive the moment.
 
 ## Development
 

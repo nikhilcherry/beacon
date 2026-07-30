@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
+import urllib.error
 import urllib.request
 
 from .server import make_server
@@ -27,6 +29,8 @@ def cmd_serve(args):
     tunnel_proc = None
     if args.tunnel:
         tunnel_proc = _start_tunnel(args.port)  # runs concurrently, never blocks serving
+    elif args.hoist:
+        _start_hoist(args.hoist, args.port)  # runs concurrently, never blocks serving
 
     try:
         server.serve_forever()
@@ -35,6 +39,9 @@ def cmd_serve(args):
     finally:
         if tunnel_proc:
             tunnel_proc.terminate()
+        if args.hoist:
+            print(f"  note      : public URL still live under hoist -- "
+                  f"run 'hoist down {args.hoist}' to remove it")
 
 
 def _start_tunnel(port: int):
@@ -69,6 +76,45 @@ def _start_tunnel(port: int):
     return proc
 
 
+def _wait_until_ready(port: int, attempts: int = 50, delay: float = 0.1) -> bool:
+    """Poll /health until the relay is actually accepting connections."""
+    for _ in range(attempts):
+        try:
+            urllib.request.urlopen(f"http://localhost:{port}/health", timeout=1)
+            return True
+        except (urllib.error.URLError, ConnectionError):
+            time.sleep(delay)
+    return False
+
+
+def _start_hoist(name: str, port: int):
+    """Give the relay a stable public URL via `hoist adopt`, if hoist is set up.
+
+    Unlike --tunnel's cloudflared quick tunnel (random URL, dies with the
+    process), `hoist adopt` registers the port under your own persistent
+    Cloudflare Tunnel + DNS -- the same URL every time you run `beacon
+    serve --hoist`, which is what you want for a QR code left up for a
+    whole hackathon rather than a one-off demo link.
+    """
+    if not shutil.which("hoist"):
+        print("  public    : skipped ('hoist' not found on PATH -- "
+              "https://github.com/nikhilcherry/hoist, or use --tunnel "
+              "for a one-off link instead)")
+        return
+
+    def run():
+        if not _wait_until_ready(port):
+            print("  public    : skipped (relay never became ready for hoist adopt)")
+            return
+        subprocess.run(["hoist", "adopt", name, "--port", str(port)])
+
+    # `hoist adopt` is a one-shot call (it writes an ingress rule and
+    # returns; it doesn't stay running), but it needs the local port to
+    # already be accepting connections -- run it on a background thread so
+    # cmd_serve can go straight into server.serve_forever() without waiting.
+    threading.Thread(target=run, daemon=True).start()
+
+
 def cmd_pub(args):
     url = f"http://{args.host}:{args.port}/pub/{args.channel}"
     try:
@@ -99,8 +145,14 @@ def main(argv=None):
     serve = sub.add_parser("serve", help="start the relay server")
     serve.add_argument("--host", default="0.0.0.0")
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
-    serve.add_argument("--tunnel", action="store_true",
-                        help="expose a public URL via a cloudflared quick tunnel")
+    public = serve.add_mutually_exclusive_group()
+    public.add_argument("--tunnel", action="store_true",
+                         help="expose a public URL via a cloudflared quick tunnel "
+                              "(random, one-off -- dies when beacon stops)")
+    public.add_argument("--hoist", nargs="?", const="beacon", default=None, metavar="NAME",
+                         help="expose a public URL via 'hoist adopt' (stable, reuses your "
+                              "own domain -- persists across restarts). Defaults to the "
+                              "name 'beacon' if no NAME is given.")
     serve.set_defaults(func=cmd_serve)
 
     pub = sub.add_parser("pub", help="publish one message from the command line")
